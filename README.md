@@ -36,3 +36,26 @@ This project bridges **Legacy Operations** with **Agentic AI**. I architected a 
     export GEMINI_API_KEY="your_key"
     python3 src/agent.py
     ```
+
+---
+
+## 🧠 Design Decisions & Roadmap
+This section outlines the architectural choices made for this prototype and the path to a production-grade implementation.
+
+### 1. Infrastructure Choice: Why Kind?
+**Decision:** Selected **Kind (Kubernetes in Docker)** over Minikube or managed cloud providers (GKE/EKS).
+* **Rationale:** Kind runs nodes as Docker containers, allowing for a lightweight simulation of a **multi-node cluster** on local hardware. This enables testing node-failure scenarios and pod rescheduling without the overhead of VMs or cloud costs.
+* **Production Path:** For a live environment (50+ nodes), this agent would transition to a **DaemonSet** or **CronJob** running directly on the cluster, utilizing a `ServiceAccount` with restricted RBAC permissions instead of external API keys.
+
+### 2. Handling Scale & Rate Limits
+**Challenge:** Direct API calls to LLMs (Google Gemini) are subject to rate limits (HTTP 429) and can be overwhelmed by "Thundering Herd" scenarios (e.g., 200 pods crashing simultaneously).
+* **Current State:** Basic retry logic.
+* **Future Roadmap:**
+    * Implement **Exponential Backoff** (jittered retries) to handle API throttling gracefully.
+    * Decouple detection from analysis using a **Message Queue (Redis/RabbitMQ)**. The agent would push alerts to a queue, and a separate worker pool would process them asynchronously, ensuring the external API is never flooded.
+
+### 3. Security & PII Compliance
+**Challenge:** Sending raw logs to a public LLM poses a risk of leaking PII (Personally Identifiable Information) or secrets.
+* **Mitigation Strategy:**
+    * **Middleware Sanitization:** Implement a pre-processing layer using Regex to scrub sensitive patterns (Emails, IP addresses, API Keys) before the payload leaves the cluster.
+    * **Private AI:** For highly regulated environments (Fintech/Health), replace Gemini with a self-hosted LLM (e.g., **Llama 3 via Ollama**) running within the VPC to ensure data sovereignty.
