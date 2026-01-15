@@ -1,68 +1,114 @@
-# 🤖 Agentic SRE: Automated Incident Triage System
+# 🤖 AI-Driven SRE Platform (Hybrid Architecture)
 
-**Role:** SRE & Observability Engineer
-**Status:** Active Prototype
-**Stack:** Kubernetes (Kind), Prometheus, Grafana, Python, Google Gemini AI
+A production-grade Kubernetes platform featuring **Autonomous AI Agents**, **GitOps Automation**, and **Hybrid Inference** (Public/Private LLMs).
 
-## 📖 Project Overview
-This project bridges **Legacy Operations** with **Agentic AI**. I architected a self-healing infrastructure loop where an AI agent monitors real-time observability data from Prometheus and performs autonomous root-cause analysis (RCA) on Kubernetes pods.
+![Kubernetes](https://img.shields.io/badge/kubernetes-%23326ce5.svg?style=for-the-badge&logo=kubernetes&logoColor=white)
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
+![ArgoCD](https://img.shields.io/badge/argocd-%23eb5b46.svg?style=for-the-badge&logo=argo&logoColor=white)
+![Google Gemini](https://img.shields.io/badge/Google%20Gemini-8E75B2?style=for-the-badge&logo=google&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-Local_AI-333333?style=for-the-badge)
 
-### 🏗️ Architecture
-1.  **Infrastructure:** Local K8s cluster (Kind) simulating a multi-node production environment.
-2.  **Observability:** Full Prometheus & Grafana stack collecting Golden Signals (Latency, Traffic, Errors, Saturation).
-3.  **Visuals:** Integrated Node Exporter Dashboard (ID 1860) for deep-dive cluster metrics.
-4.  **AI Agent:** A custom Python controller that:
-    * Detects anomalies via Prometheus API.
-    * Extracts logs via Kubernetes API (kubectl).
-    * Consults **Google Gemini LLM** for remediation strategies.
+## 📖 Architecture & Design Decisions (ADR)
 
-## 🚀 Key Features
-* **Automated Triage:** Reduces MTTR by instantly analyzing stack traces with LLMs.
-* **GitOps Workflow:** Fully containerized application with reproducible manifests.
-* **Production Simulation:** Uses a "Broken App" microservice to generate random HTTP 500 errors for testing.
+This section documents the technical reasoning behind the architecture, addressing Security, Cost, and Resilience.
 
-## 🛠️ How to Run
-1.  **Bootstrap Cluster:**
-    ```bash
-    kind create cluster --config k8s/kind-config.yaml
-    ```
-2.  **Deploy Stack:**
-    ```bash
-    kubectl apply -f k8s/manifests/deployment.yaml
-    helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack
-    ```
-3.  **Run Agent:**
-    ```bash
-    export GEMINI_API_KEY="your_key"
-    python3 src/agent.py
-    ```
+### 1. Why Hybrid AI (Google Gemini + Local Ollama)?
+**The Challenge:** Balancing advanced reasoning capabilities with strict data privacy and cost control.
+* **Decision:** Implemented a **Hybrid Provider Pattern**.
+    * **Public (Google Gemini):** Used for complex Root Cause Analysis (RCA) where "Senior-level" reasoning is required.
+    * **Private (Ollama/Gemma):** Used for PII scrubbing and high-compliance environments.
+* **Why not just Cloud?** Security. In Fintech/Healthcare, sending raw logs to a public API is a violation. Local LLMs ensure **Data Sovereignty** (data never leaves the VPC).
+* **Why not just Local?** Performance. Running massive reasoning models on local CPUs introduces latency. The hybrid approach optimizes for the specific task.
+
+### 2. Why Pull-Based GitOps (ArgoCD) vs. Push (GitHub Actions)?
+**The Challenge:** Securely synchronizing cluster state without exposing credentials.
+* **Decision:** **Pull Model**. ArgoCD sits inside the cluster and watches the repo.
+* **Security:** In a Push model (CI/CD), Admin keys must be stored in GitHub Secrets. If GitHub is compromised, the cluster is lost. In the Pull model, credentials never leave the cluster.
+* **Drift Detection:** ArgoCD provides continuous monitoring. If someone manually changes a replica count (Drift), ArgoCD detects and reverts it instantly. CI/CD pipelines only run on commit, missing manual drift.
+
+### 3. Resilience: What if GitHub goes down?
+**The Challenge:** Ensuring production stability during dependency outages.
+* **Analysis:** ArgoCD relies on GitHub availability to sync.
+* **Failure Mode:** If GitHub fails, ArgoCD cannot fetch updates, but **existing pods continue running**. The production environment remains stable (fails open).
+* **Emergency Protocol:** In a "Break Glass" scenario during a GitHub outage, we pause ArgoCD and apply hotfixes directly via `kubectl`. Once GitHub returns, we commit the changes to restore the GitOps loop.
 
 ---
 
-## 🧠 Design Decisions & Roadmap
-This section outlines the architectural choices made for this prototype and the path to a production-grade implementation.
+## 🚀 Quick Start: From Zero to Hero
 
-### 1. Infrastructure Choice: Why Kind?
-**Decision:** Selected **Kind (Kubernetes in Docker)** over Minikube or managed cloud providers (GKE/EKS).
-* **Rationale:** Kind runs nodes as Docker containers, allowing for a lightweight simulation of a **multi-node cluster** on local hardware. This enables testing node-failure scenarios and pod rescheduling without the overhead of VMs or cloud costs.
-* **Production Path:** For a live environment (50+ nodes), this agent would transition to a **DaemonSet** or **CronJob** running directly on the cluster, utilizing a `ServiceAccount` with restricted RBAC permissions instead of external API keys.
+Follow these steps to clone this repo and run the full stack on a local machine.
 
-### 2. Handling Scale & Rate Limits
-**Challenge:** Direct API calls to LLMs (Google Gemini) are subject to rate limits (HTTP 429) and can be overwhelmed by "Thundering Herd" scenarios (e.g., 200 pods crashing simultaneously).
-* **Current State:** Basic retry logic.
-* **Future Roadmap:**
-    * Implement **Exponential Backoff** (jittered retries) to handle API throttling gracefully.
-    * Decouple detection from analysis using a **Message Queue (Redis/RabbitMQ)**. The agent would push alerts to a queue, and a separate worker pool would process them asynchronously, ensuring the external API is never flooded.
+### Prerequisites
+* Docker Desktop / Daemon
+* [Kind](https://kind.sigs.k8s.io/) (Kubernetes in Docker)
+* [Kubectl](https://kubernetes.io/docs/tasks/tools/)
+* Python 3.9+
 
-### 3. Security & Data Sovereignty
-**Challenge:** Sending production logs to a public LLM (Google Gemini) risks exposing sensitive data (PII, API Keys, Secrets).
-* **Current Mitigation (Prototype):**
-    * **Middleware Sanitization:** The agent includes a pre-processing step that scrubs typical sensitive patterns (e.g., Email regex, IP addresses) before transmission.
-* **Production Architecture (High Compliance):**
-    * **Decision:** For regulated environments (Fintech/Healthcare), the architecture supports swapping the public Gemini provider for a **Self-Hosted Local LLM** (e.g., Llama 3 running on **Ollama** inside the cluster).
-    * **Reasoning:** This ensures strict **Data Sovereignty**. Logs never leave the VPC, eliminating the risk of third-party data leaks.
+### Step 1: Initialize Infrastructure
+Create the cluster and deploy the core stack.
 
-### 4. GitOps Strategy: Pull vs. Push
-**Decision:** Implemented a **Pull-Based GitOps Model** using **ArgoCD**.
-* **Security Boundary:** The cluster pulls configuration from Git. Credentials never leave the cluster, unlike Push models where Admin keys must be stored in CI/CD secrets (GitHub Actions).
-* **Drift Detection:** ArgoCD provides continuous state reconciliation, automatically correcting manual changes (drift) that a standard CI/CD pipeline would miss.
+```bash
+# 1. Clone the repository
+git clone https://github.com/fbscotta369/ai-sre-agent.git
+cd ai-sre-agent
+
+# 2. Create the Kubernetes Cluster (Kind)
+kind create cluster --config k8s/kind-config.yaml --name sre-lab
+
+# 3. Deploy the Application Stack (Broken App + Ollama)
+kubectl apply -f k8s/manifests/
+```
+
+### Step 2: Configure GitOps (ArgoCD)
+Install ArgoCD to manage the cluster state automatically.
+
+```bash
+# 1. Install ArgoCD
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+# 2. Access the Dashboard (Port Forward)
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+# Login at https://localhost:8080 (User: admin)
+# Password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo
+```
+
+### Step 3: Initialize Sovereign AI (Local LLM)
+Download the brain for the local AI provider.
+
+```bash
+# 1. Wait for Ollama pod to be Ready
+kubectl wait --for=condition=ready pod -l app=ollama --timeout=300s
+
+# 2. Pull the Gemma:2b Model (Google's Open Model)
+kubectl exec -it deployment/ollama -- ollama pull gemma:2b
+
+# 3. Open Tunnel for the Agent
+kubectl port-forward svc/ollama-svc 11434:80
+```
+
+### Step 4: Run the AI Agent
+You can run the agent in two modes.
+
+**Mode A: Sovereign Mode (Local/Private)**
+```bash
+# In a new terminal
+export LLM_PROVIDER="ollama"
+export OLLAMA_URL="http://localhost:11434/api/generate"
+python3 src/agent.py
+```
+
+**Mode B: Cloud Mode (Google Gemini)**
+```bash
+export LLM_PROVIDER="google"
+export GEMINI_API_KEY="your-api-key-here"
+python3 src/agent.py
+```
+
+---
+
+## 🛠 Tech Stack
+* **Infrastructure:** Kind, Docker, Kubernetes
+* **Automation:** ArgoCD (GitOps)
+* **AI/ML:** Google Gemini 2.0 Flash, Ollama, Gemma:2b
+* **Languages:** Python (Flask, Requests)
