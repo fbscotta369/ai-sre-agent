@@ -54,19 +54,15 @@ This section outlines the architectural choices made for this prototype and the 
     * Implement **Exponential Backoff** (jittered retries) to handle API throttling gracefully.
     * Decouple detection from analysis using a **Message Queue (Redis/RabbitMQ)**. The agent would push alerts to a queue, and a separate worker pool would process them asynchronously, ensuring the external API is never flooded.
 
-### 3. Security & PII Compliance
-**Challenge:** Sending raw logs to a public LLM poses a risk of leaking PII (Personally Identifiable Information) or secrets.
-* **Mitigation Strategy:**
-    * **Middleware Sanitization:** Implement a pre-processing layer using Regex to scrub sensitive patterns (Emails, IP addresses, API Keys) before the payload leaves the cluster.
-    * **Private AI:** For highly regulated environments (Fintech/Health), replace Gemini with a self-hosted LLM (e.g., **Llama 3 via Ollama**) running within the VPC to ensure data sovereignty.
+### 3. Security & Data Sovereignty
+**Challenge:** Sending production logs to a public LLM (Google Gemini) risks exposing sensitive data (PII, API Keys, Secrets).
+* **Current Mitigation (Prototype):**
+    * **Middleware Sanitization:** The agent includes a pre-processing step that scrubs typical sensitive patterns (e.g., Email regex, IP addresses) before transmission.
+* **Production Architecture (High Compliance):**
+    * **Decision:** For regulated environments (Fintech/Healthcare), the architecture supports swapping the public Gemini provider for a **Self-Hosted Local LLM** (e.g., Llama 3 running on **Ollama** inside the cluster).
+    * **Reasoning:** This ensures strict **Data Sovereignty**. Logs never leave the VPC, eliminating the risk of third-party data leaks.
 
 ### 4. GitOps Strategy: Pull vs. Push
-**Decision:** Implemented a **Pull-Based GitOps Model** using **ArgoCD**, rather than a Push-Based model (e.g., GitHub Actions running `kubectl apply`).
-
-* **Security Boundary (Credentials):**
-    * *Push Model Risk:* Requires storing high-privilege cluster credentials (Kubeconfig) inside GitHub Secrets. If the CI system is compromised, the production cluster is exposed.
-    * *Pull Model Advantage:* ArgoCD runs *inside* the cluster and polls GitHub for changes. The cluster credentials never leave the secure infrastructure, reducing the attack surface.
-
-* **State Reconciliation (Drift Detection):**
-    * *Push Model Limitation:* CI pipelines only run when code is committed. If an admin manually changes a deployment (Configuration Drift), the CI system remains unaware until the next commit.
-    * *Pull Model Advantage:* ArgoCD is a continuous controller. It monitors the live cluster state 24/7. If manual drift occurs (e.g., someone deletes a pod or changes a replica count), ArgoCD detects it immediately and auto-heals the application to match the desired state in Git.
+**Decision:** Implemented a **Pull-Based GitOps Model** using **ArgoCD**.
+* **Security Boundary:** The cluster pulls configuration from Git. Credentials never leave the cluster, unlike Push models where Admin keys must be stored in CI/CD secrets (GitHub Actions).
+* **Drift Detection:** ArgoCD provides continuous state reconciliation, automatically correcting manual changes (drift) that a standard CI/CD pipeline would miss.
