@@ -16,7 +16,7 @@ This section documents the technical reasoning behind the architecture, addressi
 **The Challenge:** Balancing advanced reasoning capabilities with strict data privacy and cost control.
 * **Decision:** Implemented a **Hybrid Provider Pattern**.
     * **Public (Google Gemini):** Used for complex Root Cause Analysis (RCA) where "Senior-level" reasoning is required.
-    * **Private (Ollama/Gemma):** Used for PII scrubbing and high-compliance environments.
+    * **Private (Ollama/Phi-3):** Used for PII scrubbing, high-compliance environments, and cost-saving on high-volume logs.
 * **Why not just Cloud?** Security. In Fintech/Healthcare, sending raw logs to a public API is a violation. Local LLMs ensure **Data Sovereignty** (data never leaves the VPC).
 * **Why not just Local?** Performance. Running massive reasoning models on local CPUs introduces latency. The hybrid approach optimizes for the specific task.
 
@@ -24,7 +24,7 @@ This section documents the technical reasoning behind the architecture, addressi
 **The Challenge:** Securely synchronizing cluster state without exposing credentials.
 * **Decision:** **Pull Model**. ArgoCD sits inside the cluster and watches the repo.
 * **Security:** In a Push model (CI/CD), Admin keys must be stored in GitHub Secrets. If GitHub is compromised, the cluster is lost. In the Pull model, credentials never leave the cluster.
-* **Drift Detection:** ArgoCD provides continuous monitoring. If someone manually changes a replica count (Drift), ArgoCD detects and reverts it instantly. CI/CD pipelines only run on commit, missing manual drift.
+* **Drift Detection:** ArgoCD provides continuous monitoring. If someone manually changes a replica count (Drift), ArgoCD detects and reverts it instantly.
 
 ### 3. Resilience: What if GitHub goes down?
 **The Challenge:** Ensuring production stability during dependency outages.
@@ -74,14 +74,14 @@ kubectl port-forward svc/argocd-server -n argocd 8080:443
 ```
 
 ### Step 3: Initialize Sovereign AI (Local LLM)
-Download the brain for the local AI provider.
+Download the brain for the local AI provider. We use **Phi-3** for efficiency on local hardware.
 
 ```bash
 # 1. Wait for Ollama pod to be Ready
 kubectl wait --for=condition=ready pod -l app=ollama --timeout=300s
 
-# 2. Pull the Gemma:2b Model (Google's Open Model)
-kubectl exec -it deployment/ollama -- ollama pull gemma:2b
+# 2. Pull the Model (Microsoft Phi-3 Mini)
+kubectl exec -it deployment/ollama -- ollama pull phi3
 
 # 3. Open Tunnel for the Agent
 kubectl port-forward svc/ollama-svc 11434:80
@@ -95,6 +95,7 @@ You can run the agent in two modes.
 # In a new terminal
 export LLM_PROVIDER="ollama"
 export OLLAMA_URL="http://localhost:11434/api/generate"
+export OLLAMA_MODEL="phi3"
 python3 src/agent.py
 ```
 
@@ -105,10 +106,8 @@ export GEMINI_API_KEY="your-api-key-here"
 python3 src/agent.py
 ```
 
----
-
 ## 🛠 Tech Stack
 * **Infrastructure:** Kind, Docker, Kubernetes
 * **Automation:** ArgoCD (GitOps)
-* **AI/ML:** Google Gemini 2.0 Flash, Ollama, Gemma:2b
+* **AI/ML:** Google Gemini 2.0 Flash, Ollama, Phi-3
 * **Languages:** Python (Flask, Requests)
