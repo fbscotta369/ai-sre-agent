@@ -59,3 +59,14 @@ This section outlines the architectural choices made for this prototype and the 
 * **Mitigation Strategy:**
     * **Middleware Sanitization:** Implement a pre-processing layer using Regex to scrub sensitive patterns (Emails, IP addresses, API Keys) before the payload leaves the cluster.
     * **Private AI:** For highly regulated environments (Fintech/Health), replace Gemini with a self-hosted LLM (e.g., **Llama 3 via Ollama**) running within the VPC to ensure data sovereignty.
+
+### 4. GitOps Strategy: Pull vs. Push
+**Decision:** Implemented a **Pull-Based GitOps Model** using **ArgoCD**, rather than a Push-Based model (e.g., GitHub Actions running `kubectl apply`).
+
+* **Security Boundary (Credentials):**
+    * *Push Model Risk:* Requires storing high-privilege cluster credentials (Kubeconfig) inside GitHub Secrets. If the CI system is compromised, the production cluster is exposed.
+    * *Pull Model Advantage:* ArgoCD runs *inside* the cluster and polls GitHub for changes. The cluster credentials never leave the secure infrastructure, reducing the attack surface.
+
+* **State Reconciliation (Drift Detection):**
+    * *Push Model Limitation:* CI pipelines only run when code is committed. If an admin manually changes a deployment (Configuration Drift), the CI system remains unaware until the next commit.
+    * *Pull Model Advantage:* ArgoCD is a continuous controller. It monitors the live cluster state 24/7. If manual drift occurs (e.g., someone deletes a pod or changes a replica count), ArgoCD detects it immediately and auto-heals the application to match the desired state in Git.
