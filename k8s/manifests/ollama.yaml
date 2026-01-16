@@ -1,9 +1,20 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ollama
-  labels:
-    app: ollama
+  namespace: default
 spec:
   replicas: 1
   selector:
@@ -19,20 +30,21 @@ spec:
         image: ollama/ollama:latest
         ports:
         - containerPort: 11434
-        resources:
-          requests:
-            memory: "2Gi"
-            cpu: "1"
-          limits:
-            memory: "4Gi"
-            cpu: "2"
-        # Keep the container alive even if idle
-        tty: true 
+        # 1. MOUNT THE VOLUME
+        volumeMounts:
+        - mountPath: /root/.ollama
+          name: ollama-storage
+      # 2. DEFINE THE VOLUME
+      volumes:
+      - name: ollama-storage
+        persistentVolumeClaim:
+          claimName: ollama-pvc
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: ollama-svc
+  namespace: default
 spec:
   selector:
     app: ollama
@@ -40,3 +52,4 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 11434
+  type: ClusterIP
