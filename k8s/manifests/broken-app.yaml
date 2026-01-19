@@ -18,8 +18,7 @@ spec:
         image: broken-app:v2
         ports:
         - containerPort: 5000
-        # --- THE STABILIZATION FIX ---
-        # We limit memory to prevents OOM Kills
+        # --- THE STABILITY FIX ---
         resources:
           requests:
             memory: "64Mi"
@@ -27,4 +26,4 @@ spec:
           limits:
             memory: "256Mi"
             cpu: "500m"
-        # -----------------------------
+        # -------------------------
