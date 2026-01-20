@@ -1,21 +1,3 @@
-You are absolutely right. A Senior Engineer’s documentation shouldn't just say "Run X"; it should explain what X does, why we are running it, and how to verify it worked. That depth demonstrates mastery.
-
-Here is the "Heavy Duty" Version of your README. It transforms the project from a "quick tutorial" into a Professional Engineering Case Study.
-
-Changes made:
-
-Added "Why this exists" context: Explains the SRE philosophy behind the lab.
-
-Verification Steps: Every single command now has a "How to check if it worked" step.
-
-Deep Dives: Added explanations for why we are tuning the Kernel or side-loading images.
-
-Chaos Scenarios: Expanded the "Break It" section with code you can copy to intentionally crash the cluster.
-
-Copy and paste this entire block into README.md.
-
-Markdown
-
 # 🤖 Local AI-Driven SRE Observability Lab
 
 ![Kubernetes](https://img.shields.io/badge/kubernetes-%23326ce5.svg?style=for-the-badge&logo=kubernetes&logoColor=white) ![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=for-the-badge&logo=terraform&logoColor=white) ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![ArgoCD](https://img.shields.io/badge/argocd-%23eb5b3e.svg?style=for-the-badge&logo=argo&logoColor=white) ![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=Prometheus&logoColor=white) ![Ollama](https://img.shields.io/badge/Ollama-000000?style=for-the-badge&logo=ollama&logoColor=white)
@@ -80,7 +62,7 @@ cd terraform
 # Initialize Terraform providers
 terraform init
 
-# Apply the configuration (Type 'yes' if prompted, or use auto-approve)
+## Apply the configuration (Type 'yes' if prompted, or use auto-approve)
 terraform apply --auto-approve
 ✅ Verification: Run kubectl get nodes. You should see three nodes:
 
