@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# Terraform (NEVER commit state)
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+override.tf
+terraform.rc
+
+# Docker / Kubernetes
+.kube/
+*.log
+
+# OS Junk
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
