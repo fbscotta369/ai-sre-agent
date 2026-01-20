@@ -1,7 +1,3 @@
-
----
-
-```markdown
 # 🏗️ System Architecture & Design Specification
 
 > **Project:** Local AI-Driven SRE Observability Platform
@@ -217,4 +213,3 @@ It **cannot** delete pods, read secrets, or modify deployments. This ensures tha
 
 ```
 
-```
