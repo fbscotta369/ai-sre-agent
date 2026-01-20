@@ -276,5 +276,3 @@ Bash
 
 cd terraform
 terraform destroy --auto-approve
-
-***
