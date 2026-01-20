@@ -2,14 +2,18 @@
 
 > **Project:** Local AI-Driven SRE Observability Platform
 > **Status:** Production-Ready (Lab Environment)
-> **Author:** Baltazar Scotta
+> **Author:** Baltazar "FB" Scotta
+> **Version:** 1.0.0
 
 ---
 
 ## 📋 Executive Summary
 This document outlines the architectural decisions, system components, and data flow of the **AI-Driven SRE Lab**. The platform is designed to emulate a **Self-Healing, Air-Gapped Enterprise Environment** running on local hardware.
 
-The core philosophy is **"GitOps First, AI Augmented."** No manual changes are allowed in the cluster; all state is defined in code, and operational diagnosis is delegated to an internal AI agent to minimize MTTR (Mean Time to Resolution).
+The core philosophy is **"GitOps First, AI Augmented."**
+1.  **Immutable Infrastructure:** No manual changes are allowed in the cluster.
+2.  **Sovereign AI:** All inference happens locally (Edge AI), ensuring no sensitive log data leaves the network boundary.
+3.  **Automated Diagnosis:** Operational triage is delegated to an ephemeral internal agent to reduce MTTR (Mean Time to Resolution).
 
 ---
 
@@ -54,5 +58,28 @@ graph TD
     Agent -->|Fetch Logs| App
     Agent -->|Request Analysis (HTTP)| Ollama
     Ollama -->|Return Diagnosis| Agent
-🧠 Architectural Decision Records (ADR)ADR-001: Infrastructure Provisioning StrategyDecision: Use Kind (Kubernetes in Docker) provisioned via Terraform.Alternatives Considered: Minikube, K3s, Manual kind create.Justification:Multi-Node Simulation: Kind allows us to simulate a realistic 3-node cluster (1 Control, 2 Workers) on a single machine, enabling testing of PodAntiAffinity and node failure scenarios.IaC Parity: Using Terraform (hashicorp/kubernetes provider) mimics the exact workflow used in AWS EKS / GCP GKE environments, creating a portable skill set.ADR-002: GitOps Delivery ModelDecision: Pull-Based GitOps using ArgoCD.Alternatives Considered: Push-Based (GitHub Actions -> kubectl apply).Justification:Security: The cluster does not expose its API credentials to the outside world. It reaches out to GitHub to fetch changes.Drift Detection: ArgoCD actively monitors the cluster state. If a human manually runs kubectl edit, ArgoCD detects the drift and can auto-heal the configuration, enforcing "Infrastructure as Code" integrity.ADR-003: AI Inference ArchitectureDecision: Internal Service Inference (Ollama running inside the cluster).Alternatives Considered: External API (OpenAI/Gemini), Host-based Ollama.Justification:Air-Gap Compliance: simulating a high-security environment (e.g., Banking/Healthcare) where sensitive logs cannot leave the VPC.Latency: The Agent communicates with the AI Model via the internal Cluster DNS (svc.cluster.local) over the container network (10Gbps+), eliminating internet latency and bandwidth costs.🔍 Data Flow & ObservabilityThe "Self-Healing" LoopMetric Collection: Prometheus scrapes the broken-app every 15s.Anomaly Detection: (Future Scope) Prometheus AlertManager triggers a webhook.Diagnosis: The AI Agent is triggered (currently manual, scalable to event-driven).It retrieves the last 50 lines of logs from the crashing pod.It constructs a prompt with system context.It sends the prompt to http://ollama-svc:80/api/generate.Resolution: The Agent outputs a structured Root Cause Analysis (RCA).🚧 Production Gap AnalysisComparing this Lab Environment vs. a Real Enterprise Production Setup.Component🏠 Lab Implementation🏢 Production Standard⚠️ Remediation for ProdStorageHostPath (Local Docker Disk)CSI (EBS / PersistentDisk)Use cloud storage classes to ensure data survives node termination.SecretsKubernetes Secrets (YAML)External Secrets OperatorIntegrate with AWS Secrets Manager or HashiCorp Vault. Never commit base64 secrets to Git.Ingresskubectl port-forwardIngress Controller + DNSDeploy Nginx/ALB Ingress Controller with external-dns and Cert-Manager for SSL.AI ComputeCPU Inference (Slow)GPU Node PoolUse Kubernetes Taints & Tolerations to pin AI workloads to GPU-accelerated nodes (NVIDIA).ScalingManual ReplicasHorizontal Pod Autoscaler (HPA)Implement HPA based on Custom Metrics (e.g., Request Rate) using KEDA.📚 Stack & VersionsKubernetes: v1.27 (Kind)Orchestrator: Terraform v1.5+GitOps: ArgoCD v2.10AI Engine: Ollama (running Phi-3 Mini 4k)Observability: Kube-Prometheus-Stack (Prometheus v2.45, Grafana v10.0)
+🕵️ Sequence Design: The AI Agent WorkflowHow the "Detective" works internally without external access.Code snippetsequenceDiagram
+    participant Job as K8s Job (Agent)
+    participant API as K8s API Server
+    participant App as Target Pod
+    participant AI as Ollama Service (Phi-3)
+
+    Note over Job: Job Started by SRE
+    Job->>API: Authenticate (ServiceAccount Token)
+    API-->>Job: 200 OK (RBAC Check Passed)
+    
+    Job->>API: GET /api/v1/namespaces/default/pods/broken-app/log
+    API->>App: Retrieve stdout/stderr
+    App-->>API: Stream Logs
+    API-->>Job: Return Raw Logs
+    
+    Note over Job: Pre-processing (Clean & Truncate)
+    
+    Job->>AI: POST /api/generate (Prompt + Logs)
+    Note over AI: Context Loading... Inference...
+    AI-->>Job: Return JSON { "response": "Root Cause: OOMKilled..." }
+    
+    Note over Job: Parse & Print to Stdout
+    Job->>Job: Exit Code 0
+🧠 Architectural Decision Records (ADR)Using the Michael Nygard format (Context, Decision, Consequences).ADR-001: Infrastructure Provisioning StrategyContext: We need a local Kubernetes environment that closely mimics a cloud-managed service (EKS/GKE) to validate SRE workflows.Decision: Use Kind (Kubernetes in Docker) provisioned via Terraform.Discarded Alternatives:Minikube: Good for beginners, but runs as a single VM/Container node by default. Harder to simulate node failures or affinity rules.K3s: Lightweight, but API behavior differs slightly from upstream Kubernetes.Consequences:✅ Allows multi-node simulation (1 Control, 2 Workers) on a single laptop.✅ Terraform kubernetes provider creates a portable skill set applicable to AWS/Azure.⚠️ Higher resource overhead (requires Docker running 3 heavy containers).ADR-002: GitOps Delivery ModelContext: We need to deploy applications and configurations without manual kubectl apply commands to prevent configuration drift.Decision: Pull-Based GitOps using ArgoCD.Discarded Alternatives:Push-Based (GitHub Actions): Requires giving GitHub "Admin" credentials to the cluster. Security risk.Consequences:✅ Security: The cluster requires no inbound access from the internet; it reaches out to GitHub.✅ Self-Healing: If a human manually edits a deployment, ArgoCD detects the drift and reverts it immediately.⚠️ Introduces a "chicken-and-egg" problem: ArgoCD itself must be installed first (bootstrapped manually).ADR-003: AI Inference EngineContext: We need to perform log analysis using an LLM without sending sensitive data to public APIs (OpenAI/Gemini).Decision: Ollama running Phi-3 Mini (3.8B) inside the cluster.Discarded Alternatives:Llama-3 (8B): Too heavy for a standard laptop (needs >8GB VRAM).DeepSeek Coder: Excellent for code, but Phi-3 is better optimized for reasoning on small hardware.Consequences:✅ Air-Gap: No data leaves the cluster network.✅ Zero Cost: No API tokens or per-token billing.⚠️ Performance: Inference is CPU-bound and slow (10-15 tokens/sec) compared to cloud GPUs.ADR-004: Agent Implementation LanguageContext: We need a script to glue the K8s API and the LLM together.Decision: Python (using requests and kubernetes client).Discarded Alternatives:Go (Golang): Standard for K8s tools, but string manipulation and prompt engineering are more verbose than Python.Bash: Too fragile for complex JSON parsing and HTTP error handling.Consequences:✅ Rapid prototyping and rich ecosystem for text processing.⚠️ Larger container image size (Python runtime vs. Go binary).🔒 Security Posture & RBACHow we secure the "Internal Detective".The AI Agent runs as a Kubernetes Job. It does not use the default admin credentials. Instead, we adhere to the Principle of Least Privilege (PoLP).ServiceAccount Permissions:The Agent is bound to a specific Role that allows ONLY:VERB: get, listRESOURCE: pods, pods/logNAMESPACE: defaultIt cannot delete pods, read secrets, or modify deployments. This ensures that even if the Agent is compromised (e.g., prompt injection), the attacker cannot destroy the cluster.🚧 Production Gap AnalysisComparing this Lab Environment vs. a Real Enterprise Production Setup.Component🏠 Lab Implementation🏢 Production Standard⚠️ Remediation for ProdStorageHostPath (Local Docker Disk)CSI (EBS / PersistentDisk)Use cloud storage classes (gp3) to ensure data persists across node termination and Availability Zones.SecretsKubernetes Secrets (YAML)External Secrets OperatorIntegrate with AWS Secrets Manager or HashiCorp Vault. Never commit base64 secrets to Git.Ingresskubectl port-forwardIngress Controller + DNSDeploy Nginx/ALB Ingress Controller with external-dns and cert-manager for automatic SSL/TLS.AI ComputeCPU Inference (Slow)GPU Node PoolUse Kubernetes Taints & Tolerations to pin AI workloads to GPU-accelerated nodes (e.g., NVIDIA A100/T4).ScalingManual ReplicasHorizontal Pod AutoscalerImplement HPA based on Custom Metrics (e.g., Request Rate) using KEDA.RegistrySideloaded ImagesECR / GCR / HarborUse a private container registry with vulnerability scanning (Trivy/Clair).📈 Future RoadmapEvent-Driven Diagnosis: Replace the manual Job with a Prometheus AlertManager Webhook. When an alert fires (e.g., KubePodCrashLooping), it automatically triggers the AI Agent to analyze the specific crashing pod.Vector Database Integration: Implement RAG (Retrieval-Augmented Generation). Feed the cluster's specific "Runbooks" into a vector DB so the AI can reference company-specific documentation during diagnosis.📚 Stack & VersionsKubernetes: v1.27 (Kind)Orchestrator: Terraform v1.5+GitOps: ArgoCD v2.10AI Engine: Ollama (running Phi-3 Mini 4k)Observability: Kube-Prometheus-Stack (Prometheus v2.45, Grafana v10.0)
 
