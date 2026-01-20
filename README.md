@@ -62,7 +62,7 @@ cd terraform
 # Initialize Terraform providers
 terraform init
 
-## Apply the configuration (Type 'yes' if prompted, or use auto-approve)
+# Apply the configuration (Type 'yes' if prompted, or use auto-approve)
 terraform apply --auto-approve
 ✅ Verification: Run kubectl get nodes. You should see three nodes:
 
@@ -78,6 +78,7 @@ We install ArgoCD to handle all future deployments.
 Bash
 
 cd ..
+
 # Apply the "App of Apps" pattern
 kubectl apply -f k8s/bootstrap.yaml
 ✅ Verification: Wait ~2 minutes, then run kubectl get pods -n argocd. Ensure all pods are Running.
@@ -90,6 +91,7 @@ Because this cluster runs locally, it cannot pull custom images from your laptop
 Bash
 
 docker build -t broken-app:v2 src/
+
 2. Inject Images into Kind:
 
 Bash
@@ -172,7 +174,7 @@ Run the Agent.
 
 Expected Result: The AI should diagnose: "Container is crashing due to Out Of Memory (OOMKilled) or SIGKILL signals."
 
-🆘 Troubleshooting
+## 🆘 Troubleshooting
 Q: The AI Agent says "Read timed out"
 
 Reason: Your CPU is overloaded. Running K8s + Prometheus + AI on one laptop is heavy.
@@ -188,7 +190,7 @@ Reason: You skipped Phase 5: Production Tuning.
 
 Fix: Re-run the sudo sysctl commands.
 
-🧹 Cleanup
+## 🧹 Cleanup
 To free up your computer's resources:
 
 Bash
