@@ -8,7 +8,7 @@ resource "kind_cluster" "sre_lab" {
     kind = "Cluster"
     # FIXED: Changed from 'apiVersion' to 'api_version'
     api_version = "kind.x-k8s.io/v1alpha4"
-    
+
     # Control Plane
     node {
       role = "control-plane"
@@ -30,12 +30,12 @@ resource "kind_cluster" "sre_lab" {
 
 # 2. Bootstrap ArgoCD (Platform Layer)
 resource "helm_release" "argocd" {
-  name       = "argocd"
-  repository = "https://argoproj.github.io/argo-helm"
-  chart      = "argo-cd"
-  namespace  = "argocd"
+  name             = "argocd"
+  repository       = "https://argoproj.github.io/argo-helm"
+  chart            = "argo-cd"
+  namespace        = "argocd"
   create_namespace = true
-  version    = "5.46.7"
+  version          = "5.46.7"
 
   depends_on = [kind_cluster.sre_lab]
 

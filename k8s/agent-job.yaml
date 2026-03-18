@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sre-agent-sa
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sre-agent-role
+  namespace: default
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-agent-rolebinding
+  namespace: default
+subjects:
+- kind: ServiceAccount
+  name: sre-agent-sa
+  namespace: default
+roleRef:
+  kind: Role
+  name: sre-agent-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sre-agent-job
+  namespace: default
+  labels:
+    app: sre-agent
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: sre-agent
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: sre-agent-sa
+      containers:
+      - name: agent
+        image: broken-app:v2
+        imagePullPolicy: IfNotPresent
+        command: ["python", "/app/agent.py"]
+        env:
+        - name: LLM_PROVIDER
+          value: "ollama"
+        - name: POD_NAME
+          value: "broken-app"
+        - name: OLLAMA_HOST
+          value: "ollama-svc"
+        - name: OLLAMA_NAMESPACE
+          value: "default"
+        - name: OLLAMA_MODEL
+          value: "phi3"
+        - name: OLLAMA_TIMEOUT
+          value: "60"
+        - name: OLLAMA_MAX_RETRIES
+          value: "3"
+        volumeMounts:
+        - name: agent-script
+          mountPath: /app
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+      volumes:
+      - name: agent-script
+        configMap:
+          name: agent-code
+          optional: true
