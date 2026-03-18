@@ -5,26 +5,29 @@ A production-grade, air-gapped Kubernetes platform running entirely on local har
 ## 📋 Table of Contents
 
 - [Project Overview](#project-overview)
+- [Why This Project?](#why-this-project)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
-- [Phase 1: Infrastructure Provisioning (Terraform)](#phase-1-infrastructure-provisioning-terraform)
-- [Phase 2: GitOps Bootstrapping (ArgoCD)](#phase-2-gitops-bootstrapping-argocd)
-- [Phase 3: The Air-Gap Simulation (Image Injection)](#phase-3-the-air-gap-simulation-image-injection)
-- [Phase 4: AI Engine Initialization](#phase-4-ai-engine-initialization)
-- [Phase 5: Critical System Tuning](#phase-5-critical-system-tuning)
-- [Phase 6: Running the AI SRE Agent](#phase-6-running-the-ai-sre-agent)
+- [Understanding Each Phase](#understanding-each-phase)
+  - [Phase 1: Infrastructure Provisioning](#phase-1-infrastructure-provisioning-terraform)
+  - [Phase 2: GitOps Bootstrapping](#phase-2-gitops-bootstrapping-argocd)
+  - [Phase 3: The Air-Gap Simulation](#phase-3-the-air-gap-simulation-image-injection)
+  - [Phase 4: AI Engine Initialization](#phase-4-ai-engine-initialization)
+  - [Phase 5: Critical System Tuning](#phase-5-critical-system-tuning)
+  - [Phase 6: Running the AI SRE Agent](#phase-6-running-the-ai-sre-agent)
 - [Monitoring Stack](#monitoring-stack)
 - [Chaos Engineering Experiments](#chaos-engineering-experiments)
 - [Accessing Dashboards](#accessing-dashboards)
 - [Development Tools](#development-tools)
 - [Troubleshooting](#troubleshooting)
 - [Cleanup](#cleanup)
+- [Additional Resources](#additional-resources)
 
 ---
 
 ## 📖 Project Overview
 
-This repository demonstrates a Self-Healing, AI-Integrated Observability Stack. It was engineered to solve a critical challenge: Automating Root Cause Analysis (RCA) in high-security, air-gapped environments.
+This repository demonstrates a Self-Healing, AI-Integrated Observability Stack. It was engineered to solve a critical challenge: **Automating Root Cause Analysis (RCA) in high-security, air-gapped environments.**
 
 Unlike standard "Hello World" tutorials, this lab simulates real-world constraints:
 
@@ -38,35 +41,69 @@ For a deep dive into the design decisions, see [ARCHITECTURE.md](ARCHITECTURE.md
 
 ---
 
+## 🤔 Why This Project?
+
+### The Problem
+
+In enterprise environments, especially those dealing with sensitive data (healthcare, finance, government), **air-gapped networks** are common. These networks:
+
+1. **Cannot access the internet** - No API calls to OpenAI, AWS, GCP
+2. **Cannot send data out** - Security policies block outbound traffic
+3. **Must be self-contained** - All tooling must work offline
+
+Traditional SRE tooling assumes internet access. When something breaks in an air-gapped environment, engineers are left without their favorite AI assistants.
+
+### The Solution
+
+This project demonstrates that you can run **AI-powered observability** without external APIs:
+
+1. **Self-Contained AI:** Run Ollama with Phi-3 directly in the cluster
+2. **GitOps:** Use ArgoCD for declarative infrastructure
+3. **Observability:** Collect metrics with Prometheus, visualize with Grafana
+4. **Automated Diagnosis:** The SRE Agent fetches logs and queries the local LLM
+
+### What You'll Learn
+
+By completing this lab, you'll understand:
+
+- How to set up a multi-node Kubernetes cluster with Kind
+- The GitOps philosophy and how ArgoCD works
+- How to run AI models locally (Ollama)
+- Security best practices (non-root containers, RBAC)
+- Monitoring fundamentals (Prometheus + Grafana)
+- How to build an AI-powered incident response tool
+
+---
+
 ## 🛠 Prerequisites
 
 This lab is resource-intensive. Ensure your machine meets the requirements.
 
 ### Hardware Requirements
 
-| Resource | Minimum | Recommended |
-|----------|---------|-------------|
-| RAM | 16GB | 32GB |
-| CPU | 4 Cores | 8 Cores |
-| Disk | 20GB | 50GB |
+| Resource | Minimum | Recommended | Why |
+|----------|---------|-------------|-----|
+| RAM | 16GB | 32GB | Docker + 3 K8s nodes + Prometheus + Ollama |
+| CPU | 4 Cores | 8 Cores | Ollama inference is CPU-bound |
+| Disk | 20GB | 50GB | Docker images + model weights (~3GB) |
 
-The AI Model + Prometheus stack consumes ~6GB-8GB.
+**Note:** The AI Model + Prometheus stack consumes ~6GB-8GB of RAM alone.
 
 ### Software Requirements
 
-| Tool | Minimum Version | Check Command |
-|------|-----------------|---------------|
-| Docker | 24.0+ | `docker version` |
-| Terraform | 1.5+ | `terraform -version` |
-| Kubectl | 1.27+ | `kubectl version --client` |
-| Kind | 0.20+ | `kind version` |
-| Git | 2.30+ | `git --version` |
+| Tool | Minimum Version | Check Command | Purpose |
+|------|-----------------|---------------|---------|
+| Docker | 24.0+ | `docker version` | Runs Kind nodes as containers |
+| Terraform | 1.5+ | `terraform -version` | Infrastructure as Code |
+| Kubectl | 1.27+ | `kubectl version --client` | K8s CLI |
+| Kind | 0.20+ | `kind version` | K8s in Docker |
+| Git | 2.30+ | `git --version` | Version control |
 
 ### Optional Development Tools
 
 | Tool | Purpose | Install |
 |------|---------|---------|
-| `make` | Run development tasks | `brew install make` |
+| `make` | Run development tasks | `brew install make` (macOS) or `apt install make` (Linux) |
 | `hadolint` | Lint Dockerfiles | `brew install hadolint` |
 | `kubeconform` | Validate K8s manifests | `go install github.com/yannh/kubeconform@latest` |
 | `pylint` | Lint Python code | `pip install pylint` |
@@ -136,49 +173,79 @@ kubectl logs -l job-name=sre-agent-job -f
 
 ---
 
-## Phase 1: Infrastructure Provisioning (Terraform)
+## 📚 Understanding Each Phase
 
-We use Terraform to ensure the environment is deterministic. This step creates a Docker network and provisions a 3-node Kubernetes cluster (1 Control Plane, 2 Workers).
+### Phase 1: Infrastructure Provisioning (Terraform)
 
+**What happens:**
+Terraform creates a 3-node Kubernetes cluster using Kind:
+
+- 1 Control Plane node (manages the cluster)
+- 2 Worker nodes (run your workloads)
+
+**Why Terraform?**
+
+> "Why not just run `kind create cluster`?"
+
+Great question! Using Terraform here serves a purpose:
+
+1. **Declarative:** The infrastructure is defined in code, not manual commands
+2. **Reproducible:** Same cluster every time
+3. **Transferable:** The same Terraform code works with real cloud K8s
+4. **Learning:** If you can do Terraform + Kind, you can do Terraform + EKS/GKE
+
+**Commands:**
 ```bash
 cd terraform
 terraform init
 terraform apply --auto-approve
 ```
 
-**Time estimate:** 2-3 minutes.
-
-### Verification
-
+**Verification:**
 ```bash
 kubectl get nodes
+# Expected: sre-lab-control-plane, sre-lab-worker, sre-lab-worker2
 ```
-
-Expected output: `sre-lab-control-plane`, `sre-lab-worker`, `sre-lab-worker2`
 
 ---
 
-## Phase 2: GitOps Bootstrapping (ArgoCD)
+### Phase 2: GitOps Bootstrapping (ArgoCD)
 
-We do not manually `kubectl apply` our applications. Instead, we install ArgoCD and tell it to watch this repository.
+**What happens:**
+We install ArgoCD, which will automatically sync our K8s manifests from Git.
 
+**Why GitOps?**
+
+> "Why not just `kubectl apply`?"
+
+Traditional Kubernetes management:
+```
+Developer → kubectl apply → Cluster (manual, error-prone)
+```
+
+GitOps:
+```
+Developer → Git Push → ArgoCD detects → Cluster (automatic, auditable)
+```
+
+Benefits:
+- **Drift detection:** If someone manually changes something, ArgoCD reverts it
+- **Audit trail:** Every change is in Git
+- **Self-healing:** Cluster always matches Git state
+- **No access to cluster needed:** ArgoCD pulls from Git (security!)
+
+**Commands:**
 ```bash
-cd ..
 kubectl apply -f k8s/bootstrap.yaml
 ```
 
-### Verification
-
+**Verification:**
 ```bash
 kubectl get pods -n argocd -w
+# Wait for all pods to be Running
 ```
 
-Wait until all pods are Running.
-
-### ⚠️ Important: Configure Your Fork
-
-Before ArgoCD can sync, update the repository URL in `k8s/bootstrap.yaml`:
-
+**⚠️ Important:** Before ArgoCD can sync, update the repository URL in `k8s/bootstrap.yaml` if you're using a fork:
 ```yaml
 data:
   repo.url: https://github.com/YOUR-FORK/ai-sre-agent
@@ -186,91 +253,140 @@ data:
 
 ---
 
-## Phase 3: The Air-Gap Simulation (Image Injection)
+### Phase 3: The Air-Gap Simulation (Image Injection)
 
-Because Kind runs inside Docker containers, it cannot see the Docker images on your laptop host. We must "side-load" (inject) the images into the cluster nodes.
+**What happens:**
+Because Kind runs inside Docker containers, it can't see your host's Docker images. We must "side-load" them.
 
-### Build the Target Application
+**Why Kind doesn't see host images?**
 
+```
+┌─────────────────────────────────────┐
+│         Your Laptop                 │
+│  ┌─────────────────────────────┐   │
+│  │     Docker Engine           │   │
+│  │  - broken-app:v2            │   │
+│  │  - ollama/ollama:latest     │   │
+│  └─────────────────────────────┘   │
+└─────────────────────────────────────┘
+              │ (isolated)
+              ▼
+┌─────────────────────────────────────┐
+│       Kind Cluster                  │
+│  ┌─────────────────────────────┐    │
+│  │   Control Plane Container   │    │
+│  │   Worker Container 1        │    │
+│  │   Worker Container 2        │    │
+│  └─────────────────────────────┘    │
+│     Can't see host Docker!          │
+└─────────────────────────────────────┘
+```
+
+**Solution:** Use `kind load docker-image` to inject images into the cluster nodes.
+
+**Commands:**
 ```bash
+# Build the app
 docker build -t broken-app:v2 src/
-```
 
-### Inject the App Image
-
-```bash
+# Inject into Kind
 kind load docker-image broken-app:v2 --name sre-lab
-```
-
-### Pull and Inject the AI Engine
-
-```bash
-docker pull ollama/ollama:latest
 kind load docker-image ollama/ollama:latest --name sre-lab
 ```
 
 ---
 
-## Phase 4: AI Engine Initialization
+### Phase 4: AI Engine Initialization
 
-The ollama service is now running in the cluster, but it is empty. We need to download the Phi-3 Large Language Model (LLM) into the cluster's persistent storage.
+**What happens:**
+Ollama is running, but has no models. We download Phi-3 (~2.4GB).
 
+**Why Phi-3?**
+
+| Model | Size | RAM Needed | CPU Performance | Good For |
+|-------|------|------------|-----------------|----------|
+| Phi-3 Mini | 3.8B | ~4GB | Good | Reasoning, log analysis |
+| Llama-3 8B | 8B | ~8GB | Slow | Complex tasks |
+| Mistral 7B | 7B | ~7GB | Slow | General |
+
+Phi-3 is optimized for **CPU inference**, making it perfect for a laptop-based lab.
+
+**Commands:**
 ```bash
 kubectl rollout status deployment/ollama
 kubectl exec -it deployment/ollama -- ollama pull phi3
 ```
 
-**Note:** Model download is ~2.4GB and may take several minutes.
+**Note:** This may take several minutes depending on your internet speed.
 
 ---
 
-## Phase 5: Critical System Tuning
+### Phase 5: Critical System Tuning
 
-⚠️ **DO NOT SKIP THIS STEP.**
+**⚠️ DO NOT SKIP THIS STEP.**
 
-Running Prometheus, Grafana, ArgoCD, and an AI Engine simultaneously opens thousands of file handles. The default Linux limit (8,192) is too low, causing "CrashLoopBackOff" errors.
+**What happens:**
+We increase Linux kernel limits for file watchers.
 
-Run these commands on your Host Machine:
+**Why is this needed?**
 
-```bash
-# 1. Increase the maximum number of file watches
-sudo sysctl fs.inotify.max_user_watches=524288
-
-# 2. Increase the maximum number of file watch instances
-sudo sysctl fs.inotify.max_user_instances=512
+```
+Prometheus: "I need to watch all these files!"
+Linux: "Sorry, too many files! Error: too many open files"
+Prometheus: *CrashLoopBackOff*
 ```
 
-To make these changes persistent across reboots, add to `/etc/sysctl.conf`:
+Running Prometheus, Grafana, ArgoCD, and Ollama simultaneously opens thousands of file handles. The default Linux limit (8,192) is too low.
 
+**Commands:**
 ```bash
+# Temporary (resets on reboot)
+sudo sysctl fs.inotify.max_user_watches=524288
+sudo sysctl fs.inotify.max_user_instances=512
+
+# Permanent (adds to /etc/sysctl.conf)
 echo "fs.inotify.max_user_watches=524288" | sudo tee -a /etc/sysctl.conf
 echo "fs.inotify.max_user_instances=512" | sudo tee -a /etc/sysctl.conf
 ```
 
 ---
 
-## Phase 6: Running the AI SRE Agent
+### Phase 6: Running the AI SRE Agent
 
-Now that the platform is stable, we launch the "Detective." This is a Python script running as a Kubernetes Job.
+**What happens:**
+The SRE Agent is a Kubernetes Job that:
 
-### Workflow
+1. **Fetches logs** from the broken-app using kubectl
+2. **Sends to Ollama** for AI-powered analysis
+3. **Prints diagnosis** to stdout
 
-1. The Job starts and authenticates via a restricted ServiceAccount
-2. It queries the Kubernetes API for the logs of broken-app
-3. It sends the logs to Ollama via the internal cluster network
-4. It prints the Root Cause Analysis
+**How it works:**
 
-### Execution
+```mermaid
+sequenceDiagram
+    Agent->>K8s API: Get pod logs (app=broken-app)
+    K8s API-->>Agent: Return logs
+    Agent->>Ollama: Send logs + "Analyze this"
+    Ollama-->>Agent: "Root cause: OOMKilled"
+    Agent->>stdout: Print diagnosis
+```
 
+**Why run as a Job?**
+
+- **Ephemeral:** Runs once, doesn't consume resources when idle
+- **Self-cleaning:** TTL (time-to-live) automatically deletes it
+- **Secure:** Can use limited ServiceAccount
+
+**Commands:**
 ```bash
-# 1. Upload the Agent Script (as a ConfigMap)
+# Upload agent script as ConfigMap
 kubectl create configmap agent-code --from-file=src/agent.py --dry-run=client -o yaml | kubectl apply -f -
 
-# 2. Launch the Job
+# Run the job
 kubectl delete job sre-agent-job 2>/dev/null || true
 kubectl apply -f k8s/agent-job.yaml
 
-# 3. Watch the Analysis Live
+# Watch results
 kubectl logs -l job-name=sre-agent-job -f
 ```
 
@@ -294,11 +410,21 @@ The platform includes a complete observability stack:
 
 ### Components
 
-| Component | Purpose | Port |
-|-----------|---------|------|
-| **Prometheus** | Metrics collection | 9090 |
-| **Grafana** | Dashboards & visualization | 3000 |
-| **Node Exporter** | Node-level metrics | 9100 |
+| Component | Purpose | Port | Why This Component |
+|-----------|---------|------|-------------------|
+| **Prometheus** | Metrics collection | 9090 | Industry standard for K8s monitoring |
+| **Grafana** | Dashboards & visualization | 3000 | Best-in-class visualization |
+| **Node Exporter** | Node-level metrics | 9100 | Exports system-level metrics |
+
+### How Metrics Flow
+
+```
+App (metrics) ──▶ Prometheus (scrape) ──▶ TSDB (storage)
+                                                    │
+Node Exporter (metrics) ───────────────────────────┤
+                                                    ▼
+                                           Grafana (visualize)
+```
 
 ### Deploy Monitoring
 
@@ -310,62 +436,68 @@ kubectl apply -f k8s/manifests/monitoring/
 
 The monitoring stack automatically scrapes:
 
-- Kubernetes API servers
-- Kubernetes nodes
+- Kubernetes API servers (cluster health)
+- Kubernetes nodes (CPU, memory, disk)
 - Pods with `prometheus.io/scrape=true` annotation
-- Node Exporter for system metrics
+- Node Exporter (system metrics)
 
 ---
 
 ## 🧪 Chaos Engineering Experiments
 
-A stable system is boring. Let's break it to prove the AI works.
+Let's break things on purpose to prove the AI works!
 
-### Scenario A: The "Junior Dev" Mistake (Config Error)
+### Scenario A: The "Junior Dev" Mistake
 
-Goal: Trick the AI into detecting a non-production server.
+**What's wrong:** Using Flask dev server in production
 
+**Steps:**
 1. Modify `src/Dockerfile`:
    ```dockerfile
    CMD ["python", "app.py"]
    ```
 
-2. Rebuild and Reload:
+2. Rebuild and reload:
    ```bash
    docker build -t broken-app:v2 src/
    kind load docker-image broken-app:v2 --name sre-lab
    kubectl rollout restart deployment broken-app
    ```
 
-3. Run the Agent (See Phase 6).
+3. Run the Agent (see Phase 6)
 
-**Result:** The AI will warn about "WARNING: Do not use the development server in a production environment."
+**Expected AI Response:**
+> "The logs show 'WARNING: Do not use the development server in a production environment.' This indicates the Flask development server is being used instead of Gunicorn. Fix: Use Gunicorn with multiple workers."
+
+---
 
 ### Scenario B: The Memory Leak (OOM Kill)
 
-Goal: Cause a crash that requires resource analysis.
+**What's wrong:** Too little memory allocated
 
+**Steps:**
 1. Modify `k8s/manifests/broken-app.yaml`:
    ```yaml
    resources:
      limits:
-       memory: "10Mi"
+       memory: "10Mi"  # Way too low!
    ```
 
-2. Apply Changes:
+2. Apply:
    ```bash
    kubectl apply -f k8s/manifests/broken-app.yaml
    ```
 
-3. Run the Agent.
+3. Run the Agent
 
-**Result:** The AI will diagnose an OOMKilled or SIGKILL event.
+**Expected AI Response:**
+> "The pod was terminated with exit code 137 (SIGKILL), indicating an OOM (Out of Memory) kill. The memory limit of 10Mi is insufficient. Fix: Increase memory limit to at least 256Mi."
 
 ---
 
 ## 📊 Accessing Dashboards
 
-Since this is a local cluster, we use port-forward to access the UIs.
+Since this is a local cluster, we use port-forward to access UIs.
 
 ### ArgoCD UI
 
@@ -373,11 +505,14 @@ Since this is a local cluster, we use port-forward to access the UIs.
 kubectl port-forward svc/argocd-server -n argocd 8080:443
 ```
 
-- **URL:** https://localhost:8080 (Accept the SSL warning)
+- **URL:** https://localhost:8080 (Accept SSL warning)
 - **Username:** admin
-- **Password:** `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d`
+- **Password:** 
+  ```bash
+  kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+  ```
 
-### Grafana (Monitoring)
+### Grafana
 
 ```bash
 kubectl port-forward svc/prometheus-grafana -n monitoring 3000:80
@@ -399,9 +534,7 @@ kubectl port-forward svc/prometheus -n monitoring 9090:9090
 
 ## 🛠 Development Tools
 
-This project includes a Makefile with useful development commands.
-
-### Available Commands
+### Available Make Commands
 
 ```bash
 make help              # Show available targets
@@ -414,47 +547,64 @@ make validate          # Validate YAML syntax
 make test              # Run tests
 make clean             # Clean up generated files
 make install-deps      # Install development dependencies
-make terraform-validate # Validate Terraform
+make deploy            # Deploy all K8s resources
+make deploy-monitoring # Deploy monitoring stack
+make destroy           # Destroy Terraform resources
 ```
 
 ---
 
 ## 🆘 Troubleshooting
 
-### 1. failed to create fsnotify watcher: too many open files
+### 1. "failed to create fsnotify watcher: too many open files"
 
 **Cause:** You skipped Phase 5.
 
-**Fix:** Run the sudo sysctl commands listed in Phase 5.
+**Fix:**
+```bash
+sudo sysctl fs.inotify.max_user_watches=524288
+sudo sysctl fs.inotify.max_user_instances=512
+```
+
+---
 
 ### 2. Ollama Connection Error: Read timed out
 
-**Cause:** Your computer's CPU is overloaded.
+**Cause:** Your CPU is overloaded.
 
-**Fix:** Scale down the monitoring stack to free up resources for the AI:
-
+**Fix:** Scale down monitoring:
 ```bash
 kubectl scale deployment -n monitoring --replicas=0 --all
 kubectl scale statefulset -n monitoring --replicas=0 --all
 ```
 
+---
+
 ### 3. ImagePullBackOff on broken-app
 
-**Cause:** You didn't run `kind load docker-image`. Kind cannot download the image from the internet because it's local.
+**Cause:** You didn't run `kind load docker-image`.
 
-**Fix:** Run `kind load docker-image broken-app:v2 --name sre-lab`.
+**Fix:**
+```bash
+docker build -t broken-app:v2 src/
+kind load docker-image broken-app:v2 --name sre-lab
+```
 
-### 4. Agent Job fails with "Error: kubectl not found in PATH"
+---
 
-**Cause:** The agent container doesn't have kubectl installed.
+### 4. Agent Job: "Error: kubectl not found in PATH"
 
-**Fix:** The agent runs inside the cluster and uses the in-cluster configuration. Ensure the ServiceAccount has proper RBAC permissions.
+**Cause:** kubectl isn't available inside the container.
+
+**Note:** The agent uses in-cluster configuration. Ensure your cluster is accessible and ServiceAccount has proper RBAC.
+
+---
 
 ### 5. Prometheus not scraping metrics
 
 **Cause:** Pod missing scrape annotations.
 
-**Fix:** Ensure your pod has:
+**Fix:** Add to your pod:
 ```yaml
 annotations:
   prometheus.io/scrape: "true"
@@ -464,8 +614,6 @@ annotations:
 ---
 
 ## 🧹 Cleanup
-
-To cleanly remove the entire lab and free up your system resources:
 
 ```bash
 cd terraform
@@ -480,6 +628,8 @@ terraform destroy --auto-approve
 |-----------|---------|
 | Kubernetes | v1.27 (Kind) |
 | Python | 3.12-slim |
+| Flask | 3.0.0 |
+| Gunicorn | 21.2.0 |
 | Terraform | 1.5+ |
 | ArgoCD | v2.10.0 |
 | Ollama | latest (Phi-3) |
@@ -493,6 +643,17 @@ terraform destroy --auto-approve
 
 - **Non-root containers:** Applications run as non-root user (`appuser`)
 - **Least-privilege RBAC:** Agent has read-only access to pods/logs only
-- **Pinned dependencies:** All Python packages are version-pinned
+- **Pinned dependencies:** All Python packages version-pinned
 - **No secrets in code:** All secrets via environment variables
 - **GitOps enforcement:** All changes through ArgoCD
+
+---
+
+## 📚 Additional Resources
+
+For more detailed information, see these documents:
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System design, architectural decisions, "why" explanations
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Step-by-step deployment guide
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines and code standards
+- ** [.env.example](.env.example)** - Environment variables reference
